@@ -8,26 +8,22 @@ let
   sharedPackage = pkgs.tree;
 
   mappings = {
-    root-target = dependency:
+    root-target =
+      dependency:
       if
         !dependency.host
         && (
           (dependency.context.scope == "root" && dependency.requestedFeatures == [ ])
-          || (
-            dependency.context.feature == "python"
-            && dependency.requestedFeatures == [ "python-context" ]
-          )
-          || (
-            dependency.context.feature == "tools"
-            && dependency.requestedFeatures == [ "tools-context" ]
-          )
+          || (dependency.context.feature == "python" && dependency.requestedFeatures == [ "python-context" ])
+          || (dependency.context.feature == "tools" && dependency.requestedFeatures == [ "tools-context" ])
         )
       then
         pkgs.hello
       else
         throw "root-target did not receive normalized dependency metadata";
 
-    root-host = dependency:
+    root-host =
+      dependency:
       if
         dependency.host
         && dependency.requestedFeatures == [ "tools" ]
@@ -38,10 +34,18 @@ let
       else
         throw "root-host did not receive normalized dependency metadata";
 
-    feature-only = dependency:
+    feature-only =
+      dependency:
       if
-        dependency.requestedFeatures == [ "core" "extras" ]
-        && dependency.features == [ "core" "extras" ]
+        dependency.requestedFeatures == [
+          "core"
+          "extras"
+        ]
+        &&
+          dependency.features == [
+            "core"
+            "extras"
+          ]
         && dependency."default-features" == false
         && dependency."version>=" == "3.0"
       then
@@ -49,8 +53,8 @@ let
       else
         throw "feature-only did not receive normalized dependency metadata";
 
-    feature-host = dependency:
-      if dependency.host then pkgs.lolcat else throw "feature host metadata was lost";
+    feature-host =
+      dependency: if dependency.host then pkgs.lolcat else throw "feature host metadata was lost";
 
     same-a = _dependency: sharedPackage;
     same-b = _dependency: sharedPackage;
@@ -60,12 +64,11 @@ let
     vcpkgJson = fixtures + "/vcpkg-valid.json";
   } mappings;
 
-  one = name: builtins.head (builtins.filter
-    (dependency: dependency.name == name)
-    mapped.externalDependencies);
+  one =
+    name:
+    builtins.head (builtins.filter (dependency: dependency.name == name) mapped.externalDependencies);
 
-  fails = value:
-    !(builtins.tryEval (builtins.deepSeq value true)).success;
+  fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
 
   missingMapping = adapter.mapDependencies {
     vcpkgJson = fixtures + "/vcpkg-valid.json";
@@ -83,12 +86,14 @@ let
     vcpkgJson = fixtures + "/vcpkg-platform.json";
   };
 
-  dualRoleMapped = adapter.mapDependencies {
-    vcpkgJson = fixtures + "/vcpkg-dual-role.json";
-  } {
-    some-package = dependency:
-      if dependency.host then pkgs.cowsay else pkgs.hello;
-  };
+  dualRoleMapped =
+    adapter.mapDependencies
+      {
+        vcpkgJson = fixtures + "/vcpkg-dual-role.json";
+      }
+      {
+        some-package = dependency: if dependency.host then pkgs.cowsay else pkgs.hello;
+      };
 
   conflictingFeatures = adapter.parseManifest {
     vcpkgJson = fixtures + "/vcpkg-conflicting-features.json";
@@ -102,23 +107,30 @@ let
     vcpkgJson = fixtures + "/vcpkg-conflicting-version.json";
   };
 
-  selfFeatureMapped = adapter.mapDependencies {
-    vcpkgJson = fixtures + "/vcpkg-self-feature.json";
-  } {
-    closure-only = _dependency: pkgs.jq;
-  };
+  selfFeatureMapped =
+    adapter.mapDependencies
+      {
+        vcpkgJson = fixtures + "/vcpkg-self-feature.json";
+      }
+      {
+        closure-only = _dependency: pkgs.jq;
+      };
 
   pythonSelection = mapped.selectProjectFeatures [ "python" ];
-  allFeatureSelection = mapped.selectProjectFeatures
-    (builtins.attrNames mapped.projectFeatures);
-  duplicateFeatureSelection = mapped.selectProjectFeatures [ "python" "python" ];
+  allFeatureSelection = mapped.selectProjectFeatures (builtins.attrNames mapped.projectFeatures);
+  duplicateFeatureSelection = mapped.selectProjectFeatures [
+    "python"
+    "python"
+  ];
   unknownFeatureSelection = mapped.selectProjectFeatures [ "missing" ];
   outerFeatureSelection = selfFeatureMapped.selectProjectFeatures [ "outer" ];
   innerFeatureSelection = selfFeatureMapped.selectProjectFeatures [ "inner" ];
 
-  selfReference = builtins.head (builtins.filter
-    (dependency: dependency.name == "fixture-project")
-    mapped.projectFeatures.python.dependencies);
+  selfReference = builtins.head (
+    builtins.filter (
+      dependency: dependency.name == "fixture-project"
+    ) mapped.projectFeatures.python.dependencies
+  );
 
   packagePath = package: builtins.toString package;
   packagePaths = packages: map packagePath packages;
@@ -130,48 +142,105 @@ let
     ((one "root-host").originalDeclaration.name == "root-host")
 
     # Root and every top-level project feature contribute dependencies.
-    (map (dependency: dependency.name) mapped.externalRootDependencies
-      == [ "root-target" "root-host" "same-a" ])
-    (map (dependency: dependency.name) mapped.featureDependencies
-      == [ "feature-only" "root-target" "feature-host" "same-b" ])
-    (map (dependency: dependency.name) mapped.externalDependencies
-      == [ "root-target" "root-host" "same-a" "feature-only" "feature-host" "same-b" ])
+    (
+      map (dependency: dependency.name) mapped.externalRootDependencies == [
+        "root-target"
+        "root-host"
+        "same-a"
+      ]
+    )
+    (
+      map (dependency: dependency.name) mapped.featureDependencies == [
+        "feature-only"
+        "root-target"
+        "feature-host"
+        "same-b"
+      ]
+    )
+    (
+      map (dependency: dependency.name) mapped.externalDependencies == [
+        "root-target"
+        "root-host"
+        "same-a"
+        "feature-only"
+        "feature-host"
+        "same-b"
+      ]
+    )
 
     # Root build and host dependencies are split before package realization.
-    (map (dependency: dependency.name) mapped.rootTargetDependencies
-      == [ "root-target" "same-a" ])
-    (map (dependency: dependency.name) mapped.rootHostDependencies
-      == [ "root-host" ])
-    (packagePaths mapped.root.targetPackages
-      == packagePaths [ pkgs.hello sharedPackage ])
+    (
+      map (dependency: dependency.name) mapped.rootTargetDependencies == [
+        "root-target"
+        "same-a"
+      ]
+    )
+    (map (dependency: dependency.name) mapped.rootHostDependencies == [ "root-host" ])
+    (
+      packagePaths mapped.root.targetPackages == packagePaths [
+        pkgs.hello
+        sharedPackage
+      ]
+    )
     (packagePaths mapped.root.hostPackages == packagePaths [ pkgs.cowsay ])
 
     # Each project feature retains its own mapping context and package groups.
-    (map (dependency: dependency.name) mapped.projectFeatures.python.externalDependencies
-      == [ "feature-only" "root-target" ])
-    (map (dependency: dependency.name) mapped.projectFeatures.tools.externalDependencies
-      == [ "feature-host" "same-b" "root-target" ])
-    (map (dependency: dependency.name) mapped.projectFeatures.python.targetDependencies
-      == [ "feature-only" "root-target" ])
+    (
+      map (dependency: dependency.name) mapped.projectFeatures.python.externalDependencies == [
+        "feature-only"
+        "root-target"
+      ]
+    )
+    (
+      map (dependency: dependency.name) mapped.projectFeatures.tools.externalDependencies == [
+        "feature-host"
+        "same-b"
+        "root-target"
+      ]
+    )
+    (
+      map (dependency: dependency.name) mapped.projectFeatures.python.targetDependencies == [
+        "feature-only"
+        "root-target"
+      ]
+    )
     (mapped.projectFeatures.python.hostDependencies == [ ])
-    (map (dependency: dependency.name) mapped.projectFeatures.tools.targetDependencies
-      == [ "same-b" "root-target" ])
-    (map (dependency: dependency.name) mapped.projectFeatures.tools.hostDependencies
-      == [ "feature-host" ])
-    (packagePaths mapped.projectFeatures.python.packages
-      == packagePaths [ pkgs.figlet pkgs.hello ])
-    (packagePaths mapped.projectFeatures.python.additionalPackages
-      == packagePaths [ pkgs.figlet ])
-    (packagePaths mapped.projectFeatures.tools.packages
-      == packagePaths [ sharedPackage pkgs.hello pkgs.lolcat ])
-    (packagePaths mapped.projectFeatures.tools.additionalPackages
-      == packagePaths [ pkgs.lolcat ])
+    (
+      map (dependency: dependency.name) mapped.projectFeatures.tools.targetDependencies == [
+        "same-b"
+        "root-target"
+      ]
+    )
+    (
+      map (dependency: dependency.name) mapped.projectFeatures.tools.hostDependencies
+      == [ "feature-host" ]
+    )
+    (
+      packagePaths mapped.projectFeatures.python.packages == packagePaths [
+        pkgs.figlet
+        pkgs.hello
+      ]
+    )
+    (packagePaths mapped.projectFeatures.python.additionalPackages == packagePaths [ pkgs.figlet ])
+    (
+      packagePaths mapped.projectFeatures.tools.packages == packagePaths [
+        sharedPackage
+        pkgs.hello
+        pkgs.lolcat
+      ]
+    )
+    (packagePaths mapped.projectFeatures.tools.additionalPackages == packagePaths [ pkgs.lolcat ])
 
     # Requested external features and other relevant metadata survive normalization.
     ((one "root-host").requestedFeatures == [ "tools" ])
     ((one "root-host").defaultFeatures == false)
     ((one "root-host").versionAtLeast == "2.0")
-    ((one "feature-only").requestedFeatures == [ "core" "extras" ])
+    (
+      (one "feature-only").requestedFeatures == [
+        "core"
+        "extras"
+      ]
+    )
 
     # A self-feature reference remains inspectable but is not an external dependency.
     (selfReference.requestedFeatures == [ "internal-support" ])
@@ -188,31 +257,55 @@ let
     (builtins.length mapped.projectFeatures.tools.mappedDependencies == 3)
     (duplicateFeatureSelection.selectedNames == [ "python" ])
     (packagePaths pythonSelection.additionalPackages == packagePaths [ pkgs.figlet ])
-    (packagePaths allFeatureSelection.additionalPackages
-      == packagePaths [ pkgs.figlet pkgs.lolcat ])
-    (packagePaths allFeatureSelection.effectiveTargetPackages
-      == packagePaths [ pkgs.hello sharedPackage pkgs.figlet ])
-    (packagePaths allFeatureSelection.effectiveHostPackages
-      == packagePaths [ pkgs.cowsay pkgs.lolcat ])
+    (
+      packagePaths allFeatureSelection.additionalPackages == packagePaths [
+        pkgs.figlet
+        pkgs.lolcat
+      ]
+    )
+    (
+      packagePaths allFeatureSelection.effectiveTargetPackages == packagePaths [
+        pkgs.hello
+        sharedPackage
+        pkgs.figlet
+      ]
+    )
+    (
+      packagePaths allFeatureSelection.effectiveHostPackages == packagePaths [
+        pkgs.cowsay
+        pkgs.lolcat
+      ]
+    )
     (builtins.length mapped.allPackages == 5)
-    (builtins.length (builtins.filter
-      (package: packagePath package == packagePath sharedPackage)
-      mapped.allPackages) == 1)
+    (
+      builtins.length (
+        builtins.filter (package: packagePath package == packagePath sharedPackage) mapped.allPackages
+      ) == 1
+    )
 
     # Host and target declarations with one name remain distinct records while
     # sharing one name-only mapping function.
     (dualRoleMapped.dependencyNames == [ "some-package" ])
-    (map (dependency: dependency.host) dualRoleMapped.featureDependencies
-      == [ false true ])
-    (map (dependency: dependency.host)
-      dualRoleMapped.projectFeatures.tools.mappedDependencies
-      == [ false true ])
-    (packagePaths dualRoleMapped.projectFeatures.tools.targetPackages
-      == packagePaths [ pkgs.hello ])
-    (packagePaths dualRoleMapped.projectFeatures.tools.hostPackages
-      == packagePaths [ pkgs.cowsay ])
-    (packagePaths dualRoleMapped.projectFeatures.tools.packages
-      == packagePaths [ pkgs.hello pkgs.cowsay ])
+    (
+      map (dependency: dependency.host) dualRoleMapped.featureDependencies == [
+        false
+        true
+      ]
+    )
+    (
+      map (dependency: dependency.host) dualRoleMapped.projectFeatures.tools.mappedDependencies == [
+        false
+        true
+      ]
+    )
+    (packagePaths dualRoleMapped.projectFeatures.tools.targetPackages == packagePaths [ pkgs.hello ])
+    (packagePaths dualRoleMapped.projectFeatures.tools.hostPackages == packagePaths [ pkgs.cowsay ])
+    (
+      packagePaths dualRoleMapped.projectFeatures.tools.packages == packagePaths [
+        pkgs.hello
+        pkgs.cowsay
+      ]
+    )
 
     # Mapping mismatches, malformed declarations, and platform expressions fail.
     (fails missingMapping)
@@ -229,8 +322,10 @@ let
     (outerFeatureSelection.selectedNames == [ "outer" ])
     (builtins.attrNames outerFeatureSelection.selectedProjectFeatures == [ "outer" ])
     (outerFeatureSelection.featurePackages == [ ])
-    ((builtins.head selfFeatureMapped.projectFeatures.outer.selfDependencies).requestedFeatures
-      == [ "inner" ])
+    (
+      (builtins.head selfFeatureMapped.projectFeatures.outer.selfDependencies).requestedFeatures
+      == [ "inner" ]
+    )
     (packagePaths innerFeatureSelection.featurePackages == packagePaths [ pkgs.jq ])
   ];
 in

@@ -3,13 +3,11 @@
 let
   fail = message: throw "vcpkg-nix-adapter: ${message}";
 
-  all = predicate: values:
-    builtins.foldl' (result: value: result && predicate value) true values;
+  all = predicate: values: builtins.foldl' (result: value: result && predicate value) true values;
 
   describeNames = names: builtins.concatStringsSep ", " names;
 
-  dependencyRole = dependency:
-    if dependency.host then "host" else "target";
+  dependencyRole = dependency: if dependency.host then "host" else "target";
 
   dependencySettings = dependency: {
     inherit (dependency)
@@ -19,7 +17,8 @@ let
       ;
   };
 
-  differingDependencyFields = previous: dependency:
+  differingDependencyFields =
+    previous: dependency:
     let
       fields = {
         features = value: value.requestedFeatures;
@@ -27,13 +26,15 @@ let
         "version>=" = value: value.versionAtLeast;
       };
     in
-      builtins.filter
-        (field: fields.${field} previous != fields.${field} dependency)
-        (builtins.attrNames fields);
+    builtins.filter (field: fields.${field} previous != fields.${field} dependency) (
+      builtins.attrNames fields
+    );
 
-  deduplicateDependencies = location: dependencies:
+  deduplicateDependencies =
+    location: dependencies:
     (builtins.foldl'
-      (result: dependency:
+      (
+        result: dependency:
         let
           role = dependencyRole dependency;
           seenForName = result.seen.${dependency.name} or { };
@@ -42,26 +43,35 @@ let
           let
             previous = seenForName.${role};
           in
-            if dependencySettings previous == dependencySettings dependency then
-              result
-            else
-              fail "${location} contains conflicting declarations for ${role} dependency '${dependency.name}' at indexes ${toString previous.context.index} and ${toString dependency.context.index}; differing fields: ${describeNames (differingDependencyFields previous dependency)}"
+          if dependencySettings previous == dependencySettings dependency then
+            result
+          else
+            fail "${location} contains conflicting declarations for ${role} dependency '${dependency.name}' at indexes ${toString previous.context.index} and ${toString dependency.context.index}; differing fields: ${describeNames (differingDependencyFields previous dependency)}"
         else
           {
             seen = result.seen // {
-              "${dependency.name}" = seenForName // { "${role}" = dependency; };
+              "${dependency.name}" = seenForName // {
+                "${role}" = dependency;
+              };
             };
             values = result.values ++ [ dependency ];
-          })
-      { seen = { }; values = [ ]; }
-      dependencies).values;
+          }
+      )
+      {
+        seen = { };
+        values = [ ];
+      }
+      dependencies
+    ).values;
 
   # Cross-scope summaries need one representative per dependency name and
   # host/target role. The validated root and per-feature records remain
   # available with their context.
-  representativeByIdentity = dependencies:
+  representativeByIdentity =
+    dependencies:
     (builtins.foldl'
-      (result: dependency:
+      (
+        result: dependency:
         let
           role = dependencyRole dependency;
           seenForName = result.seen.${dependency.name} or { };
@@ -71,113 +81,143 @@ let
         else
           {
             seen = result.seen // {
-              "${dependency.name}" = seenForName // { "${role}" = true; };
+              "${dependency.name}" = seenForName // {
+                "${role}" = true;
+              };
             };
             values = result.values ++ [ dependency ];
-          })
-      { seen = { }; values = [ ]; }
-      dependencies).values;
+          }
+      )
+      {
+        seen = { };
+        values = [ ];
+      }
+      dependencies
+    ).values;
 
-  uniqueStrings = values:
+  uniqueStrings =
+    values:
     (builtins.foldl'
-      (result: value:
+      (
+        result: value:
         if builtins.hasAttr value result.seen then
           result
         else
           {
-            seen = result.seen // { "${value}" = true; };
+            seen = result.seen // {
+              "${value}" = true;
+            };
             values = result.values ++ [ value ];
-          })
-      { seen = { }; values = [ ]; }
-      values).values;
+          }
+      )
+      {
+        seen = { };
+        values = [ ];
+      }
+      values
+    ).values;
 
-  packageIdentity = package:
-    builtins.unsafeDiscardStringContext (builtins.toString package);
+  packageIdentity = package: builtins.unsafeDiscardStringContext (builtins.toString package);
 
-  uniquePackages = packages:
+  uniquePackages =
+    packages:
     (builtins.foldl'
-      (result: package:
+      (
+        result: package:
         let
           identity = packageIdentity package;
         in
-          if builtins.hasAttr identity result.seen then
-            result
-          else
-            {
-              seen = result.seen // { "${identity}" = true; };
-              values = result.values ++ [ package ];
-            })
-      { seen = { }; values = [ ]; }
-      packages).values;
+        if builtins.hasAttr identity result.seen then
+          result
+        else
+          {
+            seen = result.seen // {
+              "${identity}" = true;
+            };
+            values = result.values ++ [ package ];
+          }
+      )
+      {
+        seen = { };
+        values = [ ];
+      }
+      packages
+    ).values;
 
-  normalizeDependency = location: context: declaration:
+  normalizeDependency =
+    location: context: declaration:
     let
       declarationType = builtins.typeOf declaration;
 
-      makeDependency = {
-        name,
-        host,
-        requestedFeatures,
-        defaultFeatures,
-        versionAtLeast,
-      }: {
-        inherit
-          name
-          host
-          requestedFeatures
-          defaultFeatures
-          versionAtLeast
-          declaration
-          context
-          ;
-        originalDeclaration = declaration;
+      makeDependency =
+        {
+          name,
+          host,
+          requestedFeatures,
+          defaultFeatures,
+          versionAtLeast,
+        }:
+        {
+          inherit
+            name
+            host
+            requestedFeatures
+            defaultFeatures
+            versionAtLeast
+            declaration
+            context
+            ;
+          originalDeclaration = declaration;
 
-        # Keep the vcpkg spellings available alongside convenient Nix names.
-        features = requestedFeatures;
-        "default-features" = defaultFeatures;
-        "version>=" = versionAtLeast;
-      };
+          # Keep the vcpkg spellings available alongside convenient Nix names.
+          features = requestedFeatures;
+          "default-features" = defaultFeatures;
+          "version>=" = versionAtLeast;
+        };
     in
-      if builtins.isString declaration then
-        if declaration == "" then
-          fail "${location} is an empty dependency name"
-        else
-          makeDependency {
-            name = declaration;
-            host = false;
-            requestedFeatures = [ ];
-            defaultFeatures = null;
-            versionAtLeast = null;
-          }
-      else if builtins.isAttrs declaration then
-        if builtins.hasAttr "platform" declaration then
-          fail "${location} declares a dependency-level 'platform' condition; platform expressions are not supported"
-        else if !builtins.hasAttr "name" declaration then
-          fail "${location} is an object without a 'name' field"
-        else if !builtins.isString declaration.name || declaration.name == "" then
-          fail "${location} has a 'name' field that is not a non-empty string"
-        else if builtins.hasAttr "host" declaration && !builtins.isBool declaration.host then
-          fail "${location} has a non-boolean 'host' field"
-        else if builtins.hasAttr "features" declaration && !builtins.isList declaration.features then
-          fail "${location} has a 'features' field that is not a list"
-        else if builtins.hasAttr "features" declaration && !all builtins.isString declaration.features then
-          fail "${location} has a 'features' list containing a non-string value"
-        else if builtins.hasAttr "default-features" declaration && !builtins.isBool declaration."default-features" then
-          fail "${location} has a non-boolean 'default-features' field"
-        else if builtins.hasAttr "version>=" declaration && !builtins.isString declaration."version>=" then
-          fail "${location} has a non-string 'version>=' field"
-        else
-          makeDependency {
-            name = declaration.name;
-            host = declaration.host or false;
-            requestedFeatures = declaration.features or [ ];
-            defaultFeatures = declaration."default-features" or null;
-            versionAtLeast = declaration."version>=" or null;
-          }
+    if builtins.isString declaration then
+      if declaration == "" then
+        fail "${location} is an empty dependency name"
       else
-        fail "${location} has unsupported type '${declarationType}' (expected a string or an object containing 'name')";
+        makeDependency {
+          name = declaration;
+          host = false;
+          requestedFeatures = [ ];
+          defaultFeatures = null;
+          versionAtLeast = null;
+        }
+    else if builtins.isAttrs declaration then
+      if builtins.hasAttr "platform" declaration then
+        fail "${location} declares a dependency-level 'platform' condition; platform expressions are not supported"
+      else if !builtins.hasAttr "name" declaration then
+        fail "${location} is an object without a 'name' field"
+      else if !builtins.isString declaration.name || declaration.name == "" then
+        fail "${location} has a 'name' field that is not a non-empty string"
+      else if builtins.hasAttr "host" declaration && !builtins.isBool declaration.host then
+        fail "${location} has a non-boolean 'host' field"
+      else if builtins.hasAttr "features" declaration && !builtins.isList declaration.features then
+        fail "${location} has a 'features' field that is not a list"
+      else if builtins.hasAttr "features" declaration && !all builtins.isString declaration.features then
+        fail "${location} has a 'features' list containing a non-string value"
+      else if
+        builtins.hasAttr "default-features" declaration && !builtins.isBool declaration."default-features"
+      then
+        fail "${location} has a non-boolean 'default-features' field"
+      else if builtins.hasAttr "version>=" declaration && !builtins.isString declaration."version>=" then
+        fail "${location} has a non-string 'version>=' field"
+      else
+        makeDependency {
+          name = declaration.name;
+          host = declaration.host or false;
+          requestedFeatures = declaration.features or [ ];
+          defaultFeatures = declaration."default-features" or null;
+          versionAtLeast = declaration."version>=" or null;
+        }
+    else
+      fail "${location} has unsupported type '${declarationType}' (expected a string or an object containing 'name')";
 
-  parseManifest = { vcpkgJson }:
+  parseManifest =
+    { vcpkgJson }:
     let
       manifest = builtins.fromJSON (builtins.readFile vcpkgJson);
 
@@ -198,15 +238,17 @@ let
         if !builtins.isList rawRootDependencies then
           fail "the root 'dependencies' value is not a list"
         else
-          builtins.genList
-            (index:
-              normalizeDependency
-                "root dependency at index ${toString index}"
-                { scope = "root"; feature = null; inherit index; }
-                (builtins.elemAt rawRootDependencies index))
-            (builtins.length rawRootDependencies);
+          builtins.genList (
+            index:
+            normalizeDependency "root dependency at index ${toString index}" {
+              scope = "root";
+              feature = null;
+              inherit index;
+            } (builtins.elemAt rawRootDependencies index)
+          ) (builtins.length rawRootDependencies);
 
-      parseFeature = featureName: feature:
+      parseFeature =
+        featureName: feature:
         let
           rawDependencies =
             if !builtins.isAttrs feature then
@@ -218,18 +260,17 @@ let
             if !builtins.isList rawDependencies then
               fail "project feature '${featureName}' has a 'dependencies' value that is not a list"
             else
-              builtins.genList
-                (index:
-                  normalizeDependency
-                    "dependency at index ${toString index} of project feature '${featureName}'"
-                    { scope = "feature"; feature = featureName; inherit index; }
-                    (builtins.elemAt rawDependencies index))
-                (builtins.length rawDependencies);
-          dependencies = deduplicateDependencies
-            "project feature '${featureName}' dependencies"
-            declarations;
+              builtins.genList (
+                index:
+                normalizeDependency "dependency at index ${toString index} of project feature '${featureName}'" {
+                  scope = "feature";
+                  feature = featureName;
+                  inherit index;
+                } (builtins.elemAt rawDependencies index)
+              ) (builtins.length rawDependencies);
+          dependencies = deduplicateDependencies "project feature '${featureName}' dependencies" declarations;
         in
-          feature // { inherit declarations dependencies; };
+        feature // { inherit declarations dependencies; };
 
       projectFeatures =
         if !builtins.isAttrs rawFeatures then
@@ -242,25 +283,22 @@ let
       rootDependencies = deduplicateDependencies "root dependencies" rootDeclarations;
       externalRootDependencies = builtins.filter isExternal rootDependencies;
 
-      featureDeclarationsByFeature = builtins.mapAttrs
-        (_featureName: feature: feature.declarations)
-        projectFeatures;
-      externalFeatureDependenciesByFeature = builtins.mapAttrs
-        (_featureName: feature: builtins.filter isExternal feature.dependencies)
-        projectFeatures;
-      featureDependencies = representativeByIdentity (builtins.concatMap
-        (featureName: externalFeatureDependenciesByFeature.${featureName})
-        (builtins.attrNames externalFeatureDependenciesByFeature));
+      featureDeclarationsByFeature = builtins.mapAttrs (
+        _featureName: feature: feature.declarations
+      ) projectFeatures;
+      externalFeatureDependenciesByFeature = builtins.mapAttrs (
+        _featureName: feature: builtins.filter isExternal feature.dependencies
+      ) projectFeatures;
+      featureDependencies = representativeByIdentity (
+        builtins.concatMap (featureName: externalFeatureDependenciesByFeature.${featureName}) (
+          builtins.attrNames externalFeatureDependenciesByFeature
+        )
+      );
 
-      rootTargetDependencies = builtins.filter
-        (dependency: !dependency.host)
-        externalRootDependencies;
-      rootHostDependencies = builtins.filter
-        (dependency: dependency.host)
-        externalRootDependencies;
+      rootTargetDependencies = builtins.filter (dependency: !dependency.host) externalRootDependencies;
+      rootHostDependencies = builtins.filter (dependency: dependency.host) externalRootDependencies;
 
-      externalDependencies = representativeByIdentity
-        (externalRootDependencies ++ featureDependencies);
+      externalDependencies = representativeByIdentity (externalRootDependencies ++ featureDependencies);
 
       parsed = {
         inherit
@@ -277,13 +315,14 @@ let
           rootHostDependencies
           externalDependencies
           ;
-        dependencyNames = uniqueStrings
-          (map (dependency: dependency.name) externalDependencies);
+        dependencyNames = uniqueStrings (map (dependency: dependency.name) externalDependencies);
       };
     in
-      builtins.deepSeq parsed parsed;
+    builtins.deepSeq parsed parsed;
 
-  mapDependencies = { vcpkgJson }: mappings:
+  mapDependencies =
+    { vcpkgJson }:
+    mappings:
     if !builtins.isAttrs mappings then
       fail "mapDependencies expected 'mappings' to be an attribute set"
     else
@@ -291,80 +330,80 @@ let
         parsed = parseManifest { inherit vcpkgJson; };
         dependencyNames = parsed.dependencyNames;
         mappingNames = builtins.attrNames mappings;
-        missingMappings = builtins.filter
-          (name: !builtins.hasAttr name mappings)
-          dependencyNames;
-        staleMappings = builtins.filter
-          (name: !(builtins.elem name dependencyNames))
-          mappingNames;
-        nonFunctionMappings = builtins.filter
-          (name: !builtins.isFunction mappings.${name})
-          mappingNames;
+        missingMappings = builtins.filter (name: !builtins.hasAttr name mappings) dependencyNames;
+        staleMappings = builtins.filter (name: !(builtins.elem name dependencyNames)) mappingNames;
+        nonFunctionMappings = builtins.filter (name: !builtins.isFunction mappings.${name}) mappingNames;
         mismatchMessages =
-          (if missingMappings == [ ] then [ ] else
-            [ "external dependencies without mappings: ${describeNames missingMappings}" ])
-          ++ (if staleMappings == [ ] then [ ] else
-            [ "mapping keys without external dependencies: ${describeNames staleMappings}" ]);
+          (
+            if missingMappings == [ ] then
+              [ ]
+            else
+              [ "external dependencies without mappings: ${describeNames missingMappings}" ]
+          )
+          ++ (
+            if staleMappings == [ ] then
+              [ ]
+            else
+              [ "mapping keys without external dependencies: ${describeNames staleMappings}" ]
+          );
 
-        mapDependency = dependency:
-          dependency // { package = mappings.${dependency.name} dependency; };
-        packagesFor = dependencies:
-          uniquePackages (map
-            (dependency: (mapDependency dependency).package)
-            dependencies);
+        mapDependency = dependency: dependency // { package = mappings.${dependency.name} dependency; };
+        packagesFor =
+          dependencies: uniquePackages (map (dependency: (mapDependency dependency).package) dependencies);
 
         mappedRootDependencies = map mapDependency parsed.externalRootDependencies;
         rootTargetPackages = packagesFor parsed.rootTargetDependencies;
         rootHostPackages = packagesFor parsed.rootHostDependencies;
         rootPackages = uniquePackages (rootTargetPackages ++ rootHostPackages);
-        rootPackageIdentities = builtins.listToAttrs (map
-          (package: {
+        rootPackageIdentities = builtins.listToAttrs (
+          map (package: {
             name = packageIdentity package;
             value = true;
-          })
-          rootPackages);
+          }) rootPackages
+        );
 
-        packagesNotInRoot = packages: builtins.filter
-          (package: !builtins.hasAttr (packageIdentity package) rootPackageIdentities)
-          packages;
+        packagesNotInRoot =
+          packages:
+          builtins.filter (
+            package: !builtins.hasAttr (packageIdentity package) rootPackageIdentities
+          ) packages;
 
-        realizeProjectFeature = featureName: feature:
+        realizeProjectFeature =
+          featureName: feature:
           let
             externalDependencies = parsed.externalFeatureDependenciesByFeature.${featureName};
-            selfDependencies = builtins.filter
-              (dependency: dependency.name == parsed.packageName)
-              feature.dependencies;
-            targetDependencies = builtins.filter
-              (dependency: !dependency.host)
-              externalDependencies;
-            hostDependencies = builtins.filter
-              (dependency: dependency.host)
-              externalDependencies;
+            selfDependencies = builtins.filter (
+              dependency: dependency.name == parsed.packageName
+            ) feature.dependencies;
+            targetDependencies = builtins.filter (dependency: !dependency.host) externalDependencies;
+            hostDependencies = builtins.filter (dependency: dependency.host) externalDependencies;
             mappedDependencies = map mapDependency externalDependencies;
             targetPackages = packagesFor targetDependencies;
             hostPackages = packagesFor hostDependencies;
             packages = uniquePackages (targetPackages ++ hostPackages);
             additionalPackages = packagesNotInRoot packages;
           in
-            feature // {
-              inherit
-                externalDependencies
-                selfDependencies
-                targetDependencies
-                hostDependencies
-                mappedDependencies
-                targetPackages
-                hostPackages
-                packages
-                additionalPackages
-                ;
-            };
+          feature
+          // {
+            inherit
+              externalDependencies
+              selfDependencies
+              targetDependencies
+              hostDependencies
+              mappedDependencies
+              targetPackages
+              hostPackages
+              packages
+              additionalPackages
+              ;
+          };
 
         projectFeatures = builtins.mapAttrs realizeProjectFeature parsed.projectFeatures;
 
         # Select exactly the named project feature records. Self-dependencies
         # remain inspectable but are not traversed to compute feature closure.
-        selectProjectFeatures = featureNames:
+        selectProjectFeatures =
+          featureNames:
           if !builtins.isList featureNames then
             fail "selectProjectFeatures expected a list of project feature names"
           else if !all builtins.isString featureNames then
@@ -372,50 +411,44 @@ let
           else
             let
               selectedNames = uniqueStrings featureNames;
-              unknownNames = builtins.filter
-                (name: !builtins.hasAttr name projectFeatures)
-                selectedNames;
+              unknownNames = builtins.filter (name: !builtins.hasAttr name projectFeatures) selectedNames;
               selectedFeatures = map (name: projectFeatures.${name}) selectedNames;
-              selectedProjectFeatures = builtins.listToAttrs (map
-                (name: {
+              selectedProjectFeatures = builtins.listToAttrs (
+                map (name: {
                   inherit name;
                   value = projectFeatures.${name};
-                })
-                selectedNames);
-              featureTargetPackages = uniquePackages (builtins.concatMap
-                (feature: feature.targetPackages)
-                selectedFeatures);
-              featureHostPackages = uniquePackages (builtins.concatMap
-                (feature: feature.hostPackages)
-                selectedFeatures);
-              featurePackages = uniquePackages
-                (featureTargetPackages ++ featureHostPackages);
+                }) selectedNames
+              );
+              featureTargetPackages = uniquePackages (
+                builtins.concatMap (feature: feature.targetPackages) selectedFeatures
+              );
+              featureHostPackages = uniquePackages (
+                builtins.concatMap (feature: feature.hostPackages) selectedFeatures
+              );
+              featurePackages = uniquePackages (featureTargetPackages ++ featureHostPackages);
               additionalPackages = packagesNotInRoot featurePackages;
-              effectiveTargetPackages = uniquePackages
-                (rootTargetPackages ++ featureTargetPackages);
-              effectiveHostPackages = uniquePackages
-                (rootHostPackages ++ featureHostPackages);
+              effectiveTargetPackages = uniquePackages (rootTargetPackages ++ featureTargetPackages);
+              effectiveHostPackages = uniquePackages (rootHostPackages ++ featureHostPackages);
               allPackages = uniquePackages (rootPackages ++ featurePackages);
             in
-              if unknownNames != [ ] then
-                fail "unknown project features selected: ${describeNames unknownNames}"
-              else
-                {
-                  inherit
-                    selectedNames
-                    selectedProjectFeatures
-                    featureTargetPackages
-                    featureHostPackages
-                    featurePackages
-                    additionalPackages
-                    effectiveTargetPackages
-                    effectiveHostPackages
-                    allPackages
-                    ;
-                };
+            if unknownNames != [ ] then
+              fail "unknown project features selected: ${describeNames unknownNames}"
+            else
+              {
+                inherit
+                  selectedNames
+                  selectedProjectFeatures
+                  featureTargetPackages
+                  featureHostPackages
+                  featurePackages
+                  additionalPackages
+                  effectiveTargetPackages
+                  effectiveHostPackages
+                  allPackages
+                  ;
+              };
 
-        allProjectFeatureSelection = selectProjectFeatures
-          (builtins.attrNames projectFeatures);
+        allProjectFeatureSelection = selectProjectFeatures (builtins.attrNames projectFeatures);
 
         root = {
           dependencies = parsed.externalRootDependencies;
@@ -427,19 +460,20 @@ let
           packages = rootPackages;
         };
       in
-        if mismatchMessages != [ ] then
-          fail (builtins.concatStringsSep "; " mismatchMessages)
-        else if nonFunctionMappings != [ ] then
-          fail "mapping values that are not functions: ${describeNames nonFunctionMappings}"
-        else
-          parsed // {
-            inherit
-              root
-              projectFeatures
-              selectProjectFeatures
-              ;
-            allPackages = allProjectFeatureSelection.allPackages;
-          };
+      if mismatchMessages != [ ] then
+        fail (builtins.concatStringsSep "; " mismatchMessages)
+      else if nonFunctionMappings != [ ] then
+        fail "mapping values that are not functions: ${describeNames nonFunctionMappings}"
+      else
+        parsed
+        // {
+          inherit
+            root
+            projectFeatures
+            selectProjectFeatures
+            ;
+          allPackages = allProjectFeatureSelection.allPackages;
+        };
 in
 {
   inherit parseManifest mapDependencies;
