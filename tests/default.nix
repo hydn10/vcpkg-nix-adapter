@@ -83,8 +83,11 @@ let
     vcpkgJson = fixtures + "/vcpkg-platform.json";
   };
 
-  conflictingHost = adapter.parseManifest {
-    vcpkgJson = fixtures + "/vcpkg-conflicting-host.json";
+  dualRoleMapped = adapter.mapDependencies {
+    vcpkgJson = fixtures + "/vcpkg-dual-role.json";
+  } {
+    some-package = dependency:
+      if dependency.host then pkgs.cowsay else pkgs.hello;
   };
 
   conflictingFeatures = adapter.parseManifest {
@@ -196,12 +199,26 @@ let
       (package: packagePath package == packagePath sharedPackage)
       mapped.allPackages) == 1)
 
+    # Host and target declarations with one name remain distinct records while
+    # sharing one name-only mapping function.
+    (dualRoleMapped.dependencyNames == [ "some-package" ])
+    (map (dependency: dependency.host) dualRoleMapped.featureDependencies
+      == [ false true ])
+    (map (dependency: dependency.host)
+      dualRoleMapped.projectFeatures.tools.mappedDependencies
+      == [ false true ])
+    (packagePaths dualRoleMapped.projectFeatures.tools.targetPackages
+      == packagePaths [ pkgs.hello ])
+    (packagePaths dualRoleMapped.projectFeatures.tools.hostPackages
+      == packagePaths [ pkgs.cowsay ])
+    (packagePaths dualRoleMapped.projectFeatures.tools.packages
+      == packagePaths [ pkgs.hello pkgs.cowsay ])
+
     # Mapping mismatches, malformed declarations, and platform expressions fail.
     (fails missingMapping)
     (fails staleMapping)
     (fails malformed)
     (fails conditional)
-    (fails conflictingHost)
     (fails conflictingFeatures)
     (fails conflictingDefaultFeatures)
     (fails conflictingVersion)

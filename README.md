@@ -37,8 +37,8 @@ Add the flake as an input and map the names from your `vcpkg.json`:
       mapped = adapter.mapDependencies {
         vcpkgJson = ./vcpkg.json;
       } {
+        protobuf = dependency: if dependency.host then pkgs.buildPackages.protobuf else pkgs.protobuf;
         fmt = _: pkgs.fmt;
-        cmake = _: pkgs.cmake;
       };
     in {
       devShells.x86_64-linux.default = pkgs.mkShell {
@@ -49,6 +49,8 @@ Add the flake as an input and map the names from your `vcpkg.json`:
 ```
 
 Mapping functions receive normalized dependency records, including the dependency name, host flag, requested features, version constraint, and declaration context. Mapping keys must match every external dependency found in the manifest.
+Host and target declarations with the same name remain distinct records but share
+one name-based mapping function, which can inspect the record's `host` flag.
 
 To use only selected project features, select them explicitly:
 

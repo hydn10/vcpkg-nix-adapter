@@ -8,10 +8,11 @@ let
 
   describeNames = names: builtins.concatStringsSep ", " names;
 
-  dependencyFields = dependency: {
+  dependencyRole = dependency:
+    if dependency.host then "host" else "target";
+
+  dependencySettings = dependency: {
     inherit (dependency)
-      name
-      host
       requestedFeatures
       defaultFeatures
       versionAtLeast
@@ -21,7 +22,6 @@ let
   differingDependencyFields = previous: dependency:
     let
       fields = {
-        host = value: value.host;
         features = value: value.requestedFeatures;
         "default-features" = value: value.defaultFeatures;
         "version>=" = value: value.versionAtLeast;
@@ -34,32 +34,45 @@ let
   deduplicateDependencies = location: dependencies:
     (builtins.foldl'
       (result: dependency:
-        if builtins.hasAttr dependency.name result.seen then
+        let
+          role = dependencyRole dependency;
+          seenForName = result.seen.${dependency.name} or { };
+        in
+        if builtins.hasAttr role seenForName then
           let
-            previous = result.seen.${dependency.name};
+            previous = seenForName.${role};
           in
-            if dependencyFields previous == dependencyFields dependency then
+            if dependencySettings previous == dependencySettings dependency then
               result
             else
-              fail "${location} contains conflicting declarations for dependency '${dependency.name}' at indexes ${toString previous.context.index} and ${toString dependency.context.index}; differing fields: ${describeNames (differingDependencyFields previous dependency)}"
+              fail "${location} contains conflicting declarations for ${role} dependency '${dependency.name}' at indexes ${toString previous.context.index} and ${toString dependency.context.index}; differing fields: ${describeNames (differingDependencyFields previous dependency)}"
         else
           {
-            seen = result.seen // { "${dependency.name}" = dependency; };
+            seen = result.seen // {
+              "${dependency.name}" = seenForName // { "${role}" = dependency; };
+            };
             values = result.values ++ [ dependency ];
           })
       { seen = { }; values = [ ]; }
       dependencies).values;
 
-  # Cross-scope summaries need one representative per dependency name. The
-  # validated root and per-feature records remain available with their context.
-  representativeByName = dependencies:
+  # Cross-scope summaries need one representative per dependency name and
+  # host/target role. The validated root and per-feature records remain
+  # available with their context.
+  representativeByIdentity = dependencies:
     (builtins.foldl'
       (result: dependency:
-        if builtins.hasAttr dependency.name result.seen then
+        let
+          role = dependencyRole dependency;
+          seenForName = result.seen.${dependency.name} or { };
+        in
+        if builtins.hasAttr role seenForName then
           result
         else
           {
-            seen = result.seen // { "${dependency.name}" = true; };
+            seen = result.seen // {
+              "${dependency.name}" = seenForName // { "${role}" = true; };
+            };
             values = result.values ++ [ dependency ];
           })
       { seen = { }; values = [ ]; }
@@ -235,7 +248,7 @@ let
       externalFeatureDependenciesByFeature = builtins.mapAttrs
         (_featureName: feature: builtins.filter isExternal feature.dependencies)
         projectFeatures;
-      featureDependencies = representativeByName (builtins.concatMap
+      featureDependencies = representativeByIdentity (builtins.concatMap
         (featureName: externalFeatureDependenciesByFeature.${featureName})
         (builtins.attrNames externalFeatureDependenciesByFeature));
 
@@ -246,7 +259,7 @@ let
         (dependency: dependency.host)
         externalRootDependencies;
 
-      externalDependencies = representativeByName
+      externalDependencies = representativeByIdentity
         (externalRootDependencies ++ featureDependencies);
 
       parsed = {
@@ -264,7 +277,8 @@ let
           rootHostDependencies
           externalDependencies
           ;
-        dependencyNames = map (dependency: dependency.name) externalDependencies;
+        dependencyNames = uniqueStrings
+          (map (dependency: dependency.name) externalDependencies);
       };
     in
       builtins.deepSeq parsed parsed;
